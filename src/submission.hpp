@@ -70,6 +70,10 @@ private:
 
   std::vector<double, AlignedAllocator<double>> values_ ;
 
+  bool nz_known_ = true;
+  std::size_t nz_begin_ = 0;
+  std::size_t nz_end_ = 0;
+
   static std::size_t padded_stride(std::size_t cols) {
     constexpr std::size_t multiple = 64 / sizeof(double);
 
@@ -101,6 +105,7 @@ public:
         values_(storage_size(rows, stride_), 0.0) {}
 
   double& operator()(std::size_t i, std::size_t j) noexcept {
+    nz_known_ = false;
     return values_[i * stride_ + j];
   }
   double operator()(std::size_t i, std::size_t j) const noexcept {
@@ -120,6 +125,32 @@ public:
 
   std::size_t cols() const noexcept {
     return cols_;
+  }
+
+  void nonzero_rows(std::size_t& begin, std::size_t& end) const noexcept {
+    if (nz_known_) {
+      begin = nz_begin_;
+      end = nz_end_;
+      return;
+    }
+    begin = 0;
+    end = 0;
+    for (std::size_t i = 0; i < rows_; ++i){
+      const double* r = row_data(i);
+      for (std::size_t j=0; j< cols_; ++j){
+        if(r[j] != 0.0) {
+          if (end == 0) begin = i;
+          end = i + 1;
+          break;
+        }
+      }
+    }
+  }
+
+  void set_nonzero_rows(std::size_t begin, std::size_t end) noexcept {
+    nz_begin_ = begin;
+    nz_end_ = end;
+    nz_known_ = true;
   }
 };  
 
@@ -162,14 +193,35 @@ inline void apply_stencil(const Grid& old_grid, Grid& new_grid) {
 
     // top and bottom boundaries
     for (std::size_t j = 0; j < cols; ++j) {
-        new_grid(0, j) = old_grid(0, j);
-        new_grid(rows - 1, j) = old_grid(rows - 1, j);
+        new_grid.row_data(0)[j] = old_grid.row_data(0)[j];
+        new_grid.row_data(rows - 1)[j] = old_grid.row_data(rows - 1)[j];
     }
+
+std::size_t begin, end;
+old_grid.nonzero_rows(begin, end);
+if(begin < end){
+  if (begin >0) --begin;
+  if (end < rows) ++end;
+}
+
+std::size_t stale_begin, stale_end;
+new_grid.nonzero_rows(stale_begin, stale_end);
+std::size_t first = begin, last = end;
+if(stale_begin < stale_end) {
+  if (first >= last) {first = stale_begin; last = stale_end; }
+  else{
+    if (stale_begin < first) first = stale_begin;
+    if (stale_end > last) last = stale_end;
+  }
+}
+
+if (first <1) first = 1;
+if (last > rows -1) last = rows -1;
 
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if(rows>=128 && cols >=128)
 #endif
-    for (std::size_t i = 1; i < rows - 1; ++i) {
+    for (std::size_t i = first; i < last ; ++i) {
        const double* north  = old_grid.row_data(i-1);
        const double* center = old_grid.row_data(i);
        const double* south  = old_grid.row_data(i+1);
@@ -180,4 +232,6 @@ inline void apply_stencil(const Grid& old_grid, Grid& new_grid) {
 
        update_row(north,center,south,out,cols);
     }
+  new_grid.set_nonzero_rows(begin, end);
+  
 }
