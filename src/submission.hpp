@@ -34,7 +34,9 @@ template <class T> struct AlignedAllocator {
             throw std::bad_array_new_length();
         }
 
-        return static_cast<T *>(::operator new(count * sizeof(T), std::align_val_t{kGridAlignment}));
+        return static_cast<T *>(
+            ::operator new(count * sizeof(T), 
+            std::align_val_t{kGridAlignment}));
     }
 
     void deallocate(T *pointer, std::size_t) noexcept {
@@ -42,13 +44,17 @@ template <class T> struct AlignedAllocator {
     }
 };
 
-template <class T, class U>
-constexpr bool operator==(const AlignedAllocator<T> &, const AlignedAllocator<U> &) noexcept {
+template <class T, class U> constexpr bool operator==(
+    const AlignedAllocator<T> &, 
+    const AlignedAllocator<U> &
+) noexcept {
     return true;
 }
 
-template <class T, class U>
-constexpr bool operator!=(const AlignedAllocator<T> &, const AlignedAllocator<U> &) noexcept {
+template <class T, class U> constexpr bool operator!=(
+    const AlignedAllocator<T> &, 
+    const AlignedAllocator<U> &
+) noexcept {
     return false;
 }
 
@@ -56,7 +62,7 @@ struct RowRange {
     std::size_t begin = 0;
     std::size_t end = 0;
 
-    bool empty() const noexcept { return begin >= end; }
+    bool empty() const noexcept {return begin >= end;}
 };
 
 inline bool row_has_nonzero(const double *row, std::size_t cols) noexcept {
@@ -81,33 +87,30 @@ class Grid {
 
     static std::size_t padded_stride(std::size_t cols) {
         constexpr std::size_t multiple = (kGridAlignment / sizeof(double));
-
-        if (cols > std::numeric_limits<std::size_t>::max() - (multiple - 1)) {
-            throw std::length_error("Grid width too large");
-        }
-
+        if (cols > std::numeric_limits<std::size_t>::max() - (multiple - 1)) {throw std::length_error("Grid width too large");}
         return ((cols + multiple - 1) / multiple) * multiple;
     }
 
     static std::size_t storage_size(std::size_t rows, std::size_t stride) {
-        if (stride != 0 && rows > std::numeric_limits<std::size_t>::max() / stride) {
-            throw std::length_error("grid size too large");
-        }
-
+        if (stride != 0 && rows > std::numeric_limits<std::size_t>::max() / stride) {throw std::length_error("grid size too large");}
         return rows * stride;
     }
 
-    double *row_data(std::size_t i) noexcept { return values_.data() + i * stride_; }
+    double *row_data(std::size_t i) noexcept {return values_.data() + i * stride_;}
 
     // Rows containing every nonzero value. If unknown, scans inward from the
     // top and bottom; rows in between are never read.
     RowRange nonzero_rows() const noexcept {
-        if    (nz_rows_)       {return *nz_rows_;}
+        if (nz_rows_) return *nz_rows_;
         std::size_t begin = 0;
-        while (begin < rows_ && !row_has_nonzero(row_data(begin), cols_)) {++begin;}
-        if    (begin == rows_) {return RowRange{};}
+        while (begin < rows_ && !row_has_nonzero(row_data(begin), cols_)) {
+            ++begin;
+        }
+        if (begin == rows_) return RowRange{};
         std::size_t end   = rows_;
-        while (!row_has_nonzero(row_data(end - 1), cols_))                {--end;}
+        while (!row_has_nonzero(row_data(end - 1), cols_)) {
+            --end;
+        }
 
         return RowRange{begin, end};
     }
@@ -122,7 +125,7 @@ class Grid {
         : rows_(rows), cols_(cols), stride_(padded_stride(cols)),
           values_(storage_size(rows, stride_), 0.0) {}
 
-    double &operator()(std::size_t i, std::size_t j) noexcept {
+    double &operator()(std::size_t i, std::size_t j)      noexcept {
         nz_rows_.reset();
         return values_[i * stride_ + j];
     }
@@ -130,10 +133,11 @@ class Grid {
         return values_[i * stride_ + j];
     }
 
-    const double *row_data(std::size_t i) const noexcept { return values_.data() + i * stride_; }
+    const double *row_data(std::size_t i)           const noexcept { 
+        return values_.data() + i * stride_; 
+    }
 
     std::size_t rows() const noexcept { return rows_; }
-
     std::size_t cols() const noexcept { return cols_; }
 };
 
@@ -161,7 +165,11 @@ inline RowRange grow(RowRange r, std::size_t rows) noexcept {
 inline RowRange merge(RowRange a, RowRange b) noexcept {
     if (a.empty()) return b;
     if (b.empty()) return a;
-    return RowRange{std::min(a.begin, b.begin), std::max(a.end, b.end)};
+
+    return RowRange{
+        std::min(a.begin, b.begin), 
+        std::max(a.end, b.end)
+    };
 }
 
 inline void apply_stencil(const Grid &old_grid, Grid &new_grid) {
@@ -178,9 +186,7 @@ inline void apply_stencil(const Grid &old_grid, Grid &new_grid) {
     const std::size_t cols = old_grid.cols();
 
     // safeguard
-    if (rows == 0 || cols == 0) {
-        return;
-    }
+    if (rows == 0 || cols == 0) return;
 
     // top and bottom boundary rows are copied unchanged
     std::copy_n(old_grid.row_data(0),        cols, new_grid.row_data(0));
